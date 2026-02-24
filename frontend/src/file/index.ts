@@ -5,13 +5,13 @@ export interface UploadZoneProps {
     file: File | null;
     onClear: () => void;
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}
+};
 
 export interface User {
     id?: string;
     name?: string;
     email?: string;
-}
+};
 
 export interface Project {
     id: string;
@@ -23,13 +23,13 @@ export interface Project {
     userPrompt?: string;
     aspectRatio?: string;
     targetLength?: number;
-    generateImage?: string;
-    generateVideo?: string;
+    generatedImage?: string;
+    generatedVideo?: string;
     isGenerating: boolean;
     isPublished: boolean;
     error?: string;
-    createdAt?: string;
+    createdAt: string;
     updatedAt?: string;
     uploadedImages: string[];
     
-}
+};
