@@ -22,6 +22,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+
+
   // Relations
   projects     Project[]
 }
@@ -41,6 +43,8 @@ model Project {
   isGenerating       Boolean  @default(false)
   isPublished        Boolean  @default(false)
   error              String   @default("")
+
+  @@unique([id, userId])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
