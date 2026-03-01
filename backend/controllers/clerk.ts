@@ -1,83 +1,141 @@
 import { Request, Response } from "express";
-import { verifyWebhook } from '@clerk/express/webhooks'
+import { verifyWebhook } from "@clerk/express/webhooks";
 import { prisma } from "../configs/prisma.js";
-import * as Sentry from "@sentry/node"
+import * as Sentry from "@sentry/node";
 
 const clerkWebhooks = async (req: Request, res: Response) => {
-    try {
-        const evt: any = await verifyWebhook(req)
+  try {
+    // ✅ Verify Clerk webhook signature
+    const evt: any = await verifyWebhook(req);
 
-        // getting data from req
-        const {data, type} = evt
+    const { data, type } = evt;
 
-        // switch cases for different events
-        switch (type) {
-            case "user.created": {
-                await prisma.user.create({
-                    data: {
-                        id: data.id,
-                        email: data?.email_addresses[0]?.email_address,
-                        name: data?.first_name + " " + data?.last_name,
-                        image: data?.image_url,
-                    }
-                })
-                break;
-            }
+    console.log("Webhook Type:", type);
+    console.log("Webhook Data:", data);
 
-            case "user.updated": {
-                await prisma.user.update({
-                    where: {
-                        id: data.id
-                    },
-                    data: {
-                        email: data?.email_addresses[0]?.email_address,
-                        name: data?.first_name + " " + data?.last_name,
-                        image: data?.image_url,
-                    }
-                })
-                break;
-            }
+    switch (type) {
 
-            case "user.deleted": {
-                await prisma.user.delete({
-                    where: {
-                        id: data.id
-                    }
-                })
-                break;
-            }
+      // =============================
+      // USER CREATED / UPDATED
+      // =============================
+      case "user.created":
+      case "user.updated": {
+        await prisma.user.upsert({
+          where: { id: data.id },
+          update: {
+            email: data?.email_addresses?.[0]?.email_address ?? "",
+            name: `${data?.first_name ?? ""} ${data?.last_name ?? ""}`.trim(),
+            image: data?.image_url ?? "",
+          },
+          create: {
+            id: data.id,
+            email: data?.email_addresses?.[0]?.email_address ?? "",
+            name: `${data?.first_name ?? ""} ${data?.last_name ?? ""}`.trim(),
+            image: data?.image_url ?? "",
+          },
+        });
 
-            case "paymentAttempt.updated": {
-                    if((data.charge_type === "recurring" || data.charge_type === "checkout") && data.status === "paid") {
-                        const credits = {pro: 80, premium: 240,}
-                        const clerkUserId = data?.payer?.user_id;
-                        const planId: keyof typeof credits = data?.subscription_items?.[0]?.plan?.slug;
+        console.log("User synced with DB ✅");
+        break;
+      }
 
-                        if(planId !== "pro" && planId !== "premium") {
-                            return res.status(400).json({message: "Invalid plan"})
-                        }
+      // =============================
+      // USER DELETED
+      // =============================
+      case "user.deleted": {
+        await prisma.user.delete({
+          where: { id: data.id },
+        });
 
-                        console.log(planId);
+        console.log("User deleted");
+        break;
+      }
 
-                        await prisma.user.update({
-                            where: {
-                                id: clerkUserId 
-                            },
-                            data: {
-                                credits: {increment: credits[planId]}
-                            }
-                        })
-                    }
-                break;
-            }
-            default:
-                break;
+      // =============================
+      // PAYMENT / SUBSCRIPTION EVENTS
+      // =============================
+      case "subscription.created":
+      case "subscription.updated":
+      case "paymentAttempt.updated":
+      case "checkout.session.completed":
+      case "payment_intent.succeeded": {
+
+        const creditsMap = {
+          pro: 80,
+          premium: 240,
+        };
+
+        // ✅ Extract Clerk userId safely
+        const clerkUserId =
+          data?.user_id ||
+          data?.payer?.user_id ||
+          data?.payer_id ||
+          data?.metadata?.userId;
+
+        // ✅ Detect plan slug safely
+        const rawPlan =
+          data?.items?.[0]?.plan?.slug?.toLowerCase() ||
+          data?.subscription_items?.[0]?.plan?.slug?.toLowerCase() ||
+          "";
+
+        const planId: keyof typeof creditsMap | undefined =
+          rawPlan.includes("premium")
+            ? "premium"
+            : rawPlan.includes("pro")
+            ? "pro"
+            : undefined;
+
+        // ✅ Accept multiple success states
+        const isActive =
+          data?.status === "active" ||
+          data?.status === "paid" ||
+          data?.status === "succeeded" ||
+          data?.status === "completed";
+
+        console.log("Detected Plan:", rawPlan);
+        console.log("Detected User:", clerkUserId);
+        console.log("Payment Status:", data?.status);
+
+        if (!clerkUserId || !planId || !isActive) {
+          console.log("Webhook ignored");
+          break;
         }
-        res.json({message: "Webhook Recieved : " + type})
-    } catch (error: any) {
-        Sentry.captureException(error)
-        res.status(500).json({ message: error.message})
-    }
-}
 
-export default clerkWebhooks
+        // ✅ Increment credits (DO NOT overwrite)
+        await prisma.user.update({
+          where: { id: clerkUserId },
+          data: {
+            credits: {
+              increment: creditsMap[planId],
+            },
+          },
+        });
+
+        console.log(
+          `Credits Added ✅ ${creditsMap[planId]} → User ${clerkUserId}`
+        );
+
+        break;
+      }
+
+      default:
+        console.log("Unhandled webhook:", type);
+        break;
+    }
+
+    return res.status(200).json({
+      message: "Webhook received",
+      type,
+    });
+
+  } catch (error: any) {
+    console.error(error);
+    Sentry.captureException(error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+export default clerkWebhooks;

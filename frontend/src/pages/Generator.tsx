@@ -3,8 +3,18 @@ import Title from "../components/Title";
 import UploadZone from "../components/UploadZone";
 import { Loader2Icon, RectangleHorizontalIcon, RectangleVerticalIcon, Wand2Icon } from "lucide-react";
 import { PrimaryButton } from "../components/Buttons";
+import { useAuth, useUser } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
+import api from "../configs/axios"
+
 
 const Generator = () => {
+
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  const navigate = useNavigate();
+
   const [name, setName] = useState("");
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
@@ -26,6 +36,36 @@ const Generator = () => {
 
   const handleGenerate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if(!user) return toast('Please Login to Generate')
+    if(!productImage || !modelImage || !name || !productName || !aspectRatio)
+      return toast('Please fill all the required fields')
+  
+    try {
+      setIsGenerating(true);
+      const formData = new FormData();
+
+      formData.append('name', name)
+      formData.append('productName', productName)
+      formData.append('productDescription', productDescription)
+      formData.append('userPrompt', userPrompt)
+      formData.append('aspectRatio', aspectRatio)
+      formData.append('images', productImage)
+      formData.append('images', modelImage)
+
+      const token = await getToken();
+
+      const { data } = await api.post('/api/project/create', formData, {
+        headers: { Authorization: `Bearer ${token}`}
+      })
+
+      toast.success(data.message)
+      navigate('/result/' + data.projectId)
+
+    } catch (error: any) {
+      setIsGenerating(false);
+      toast.error(error?.response?.data?.message || error.message);
+    }
   };
 
   return (
@@ -58,7 +98,7 @@ const Generator = () => {
           <div className="w-full">
             <div className="mb-4 text-gray-300">
               <label htmlFor="name" className="block text-sm mb-4">
-                Product Name
+                Project Name
               </label>
               <input
                 type="text"

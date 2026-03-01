@@ -1,24 +1,44 @@
 import { useEffect, useState } from "react";
-import { dummyGenerations } from "../assets/assets";
 import type { Project } from "../file";
 import { Loader2Icon } from "lucide-react";
 import ProjectCard from "../components/ProjectCard";
 import { PrimaryButton } from "../components/Buttons";
+import { useAuth, useUser } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
+import api from "../configs/axios";
+import toast from "react-hot-toast";
 
 const MyGenerations = () => {
+
+  const {user, isLoaded} = useUser()
+  const {getToken} = useAuth()
+  const navigate = useNavigate()
+
   const [generations, setGenerations] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchGenerations = async () => {
-    setTimeout(() => {
-      setGenerations(dummyGenerations);
-      setLoading(false);
-    }, 2000);
+  const fetchMyGenerations = async () => {
+    
+    try {
+      const token = await getToken();
+      const { data } = await api.get('/api/user/projects', {
+        headers: { Authorization: `Bearer ${token}`}
+      })
+      setGenerations(data.projects)
+      setLoading(false)
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || error.message);
+      console.log(error);
+    }
   };
 
   useEffect(() => {
-    fetchGenerations();
-  }, []);
+    if(user) {
+      fetchMyGenerations();
+    } else if(isLoaded && !user) {
+      navigate('/');
+    }
+  }, [user]);
 
   return loading ? (
     <div className="flex items-center justify-center min-h-screen">

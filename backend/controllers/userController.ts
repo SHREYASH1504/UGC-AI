@@ -13,7 +13,7 @@ export const getUserCredits = async (req: Request, res: Response) => {
         const user = await prisma.user.findUnique({
             where: {id: userId}
         })
-        res.json({ credits: user?.credits })
+        res.json({ credits: user?.credits ?? 20 })
 
     } catch (error: any) {
         Sentry.captureException(error)
@@ -49,7 +49,7 @@ export const getProjectById = async (req: Request, res: Response) => {
 
         if(!project) { return res.status(404).json({ message: 'Project not found' })}
         
-        res.json({project })
+        res.json({ project })
 
     } catch (error: any) {
         Sentry.captureException(error)

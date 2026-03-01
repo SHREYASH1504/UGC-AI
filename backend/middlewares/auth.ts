@@ -15,7 +15,7 @@ export const protect = async (
       });
     }
 
-    next()
+    next();
   } catch (error: any) {
     Sentry.captureException(error);
     res.status(401).json({

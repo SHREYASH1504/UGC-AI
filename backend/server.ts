@@ -4,6 +4,7 @@ import express, { Request, Response } from 'express';
 import cors from "cors";
 import { clerkMiddleware } from '@clerk/express'
 import clerkWebhooks from "./controllers/clerk.js";
+import fs from 'fs';
 import * as Sentry from "@sentry/node"
 import userRouter from "./routes/userRoutes.js";
 import projectRouter from "./routes/projectRoutes.js";
@@ -13,7 +14,12 @@ const app = express();
 // Middleware
 app.use(cors())
 
-app.post('/api/clerk', express.raw({ type: 'application/json' }), clerkWebhooks)
+app.post('/api/clerk', express.raw({ type: 'application/json' }), (req, res, next) => {
+    try {
+        fs.appendFileSync('webhook.log', req.body.toString() + '\\n');
+    } catch(e) {}
+    next();
+}, clerkWebhooks)
 
 app.use(express.json());
 app.use(clerkMiddleware())

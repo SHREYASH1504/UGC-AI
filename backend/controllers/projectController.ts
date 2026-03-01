@@ -18,7 +18,7 @@ const loadImage = (path: string, mimeType: string) => {
 }
 
 // we will also create image using ai
-export const createProjects = async (req:Request, res:Response) => {
+export const createProject = async (req:Request, res:Response) => {
     let tempProjectId: string;
     const {userId} = req.auth();
     let isCreditDeducted = false;
@@ -29,13 +29,14 @@ export const createProjects = async (req:Request, res:Response) => {
     const images: any = req.files;
 
     if(images.length < 2 || !productName) {
-        return res.status(400).json({message: "Please uploa atleast 2 images"})
+        return res.status(400).json({message: "Please upload atleast 2 images"})
     }
 
     const user = await prisma.user.findUnique({
         where: {id: userId}
     })
 
+    // console.log(user?.credits)
     if(!user || user.credits < 5) {
         return res.status(401).json({message: "Insufficient Credits"})
     } else {
@@ -72,7 +73,7 @@ export const createProjects = async (req:Request, res:Response) => {
         tempProjectId = project.id;
 
         // gemini model name
-        const model = 'gemini-3.1-flash-image-preview';
+        const model = 'gemini-3-pro-image-preview';
 
         const generationConfig: GenerateContentConfig = {
             maxOutputTokens: 32768,
@@ -81,7 +82,7 @@ export const createProjects = async (req:Request, res:Response) => {
             responseModalities: ['IMAGE'],
             imageConfig: {
                 aspectRatio: aspectRatio || '9:16',
-                imageSize: '1K',
+                imageSize: '1K'
             },
             safetySettings: [
                 {
@@ -104,8 +105,8 @@ export const createProjects = async (req:Request, res:Response) => {
         }
 
         // images to base64 structure for ai model
-        const imag1base64 = loadImage(images[0].path, images[0].mimeType);
-        const imag2base64 = loadImage(images[1].path, images[1].mimeType);
+        const imag1base64 = loadImage(images[0].path, images[0].mimetype);
+        const imag2base64 = loadImage(images[1].path, images[1].mimetype);
 
         const prompt = {
             text: 'Combine the person and product into a realistic photo. Make the person naturally hold the product. Match lighting , shadows, scale and perspective. Make the person stand in perofessional studio lighting. Output ecommerce-quality photo realistic imagery. ${userPrompt}'
@@ -119,11 +120,11 @@ export const createProjects = async (req:Request, res:Response) => {
         })
 
         // Check if the response is valid
-        if(!response?.candidate?.[0]?.content?.parts){
+        if(!response?.candidates?.[0]?.content?.parts){
             throw new Error('Unexpected Response')
         }
 
-        const parts = response.candidate[0].content.parts;
+        const parts = response.candidates[0].content.parts;
 
         let finalBuffer: Buffer | null = null;
 
@@ -137,14 +138,14 @@ export const createProjects = async (req:Request, res:Response) => {
             throw new Error('Failed to generate image');
         }
 
-        const base64Image = `data:image/png:base64,${finalBuffer.toString('base64')}`
+        const base64Image = `data:image/png;base64,${finalBuffer.toString('base64')}`
 
         const uploadResult = await cloudinary.uploader.upload(base64Image, {resource_type: 'image'});
 
         await prisma.project.update({
             where: {id: project.id},
             data: {
-                generatedImage: uploadResult.secur_url,
+                generatedImage: uploadResult.secure_url,
                 isGenerating: false
             }
         })
@@ -157,7 +158,6 @@ export const createProjects = async (req:Request, res:Response) => {
             await prisma.project.update({
                 where: {id: tempProjectId},
                 data: {isGenerating: false, error: error.message}
-
             })
         }
 
@@ -211,9 +211,8 @@ export const createVideo = async (req:Request, res:Response) => {
             data: {isGenerating: true}
         })
 
-        const prompt = `make the person showcase the produxt which is ${project.productName} ${project.productDescription && `ans Product Description: ${project.productDescription}`}`
-
-        const model = 'veo-3.1-generate-preview'
+        const prompt = `Make the person naturally showcase the product ${project.productName} ${project.productDescription && `and Product Description: ${project.productDescription}`}`;
+        const model = 'veo-3.1-generate-preview';
 
         if(!project.generatedImage) {
             throw new Error('Genrated Image not found');
@@ -221,17 +220,17 @@ export const createVideo = async (req:Request, res:Response) => {
 
         const image = await axios.get(project.generatedImage, {responseType: 'arraybuffer',})
 
-        const iamgeBytes: any = Buffer.from(image.data)
+        const imageBytes: any = Buffer.from(image.data)
 
         let operation: any = await ai.models.generateVideos({
             model, 
             prompt,
             image: {
-                imageBytes: iamgeBytes.toString('base64'),
+                imageBytes: imageBytes.toString('base64'),
                 mimeType: 'image/png',
             },
             config: {
-                aspectRatio: project?.aspectRatio || '9.16',
+                aspectRatio: project?.aspectRatio || '9:16',
                 numberOfVideos: 1,
                 resolution: '720p',
             }
@@ -246,13 +245,13 @@ export const createVideo = async (req:Request, res:Response) => {
         }
 
         const filename = `${userId}-${Date.now()}.mp4`;
-        const filePath = path.join('video', filename)
+        const filePath = path.join('videos', filename);
 
         // create the images directory if it doesn't exist
         fs.mkdirSync('videos', {recursive: true})
 
         if(!operation.response.generatedVideos) {
-            throw new Error(operation.response.raiMediaFileteredReasons[0])
+            throw new Error(operation.response.raiMediaFilteredReasons[0])
         }
 
         // Download the video
@@ -288,7 +287,7 @@ export const createVideo = async (req:Request, res:Response) => {
         })
 
         if(isCreditDeducted) {
-            // add creedit back
+            // add credit back
             await prisma.user.update({
                 where: {id: userId},
                 data: {credits: {increment: 10}}
@@ -316,7 +315,7 @@ export const deleteProject = async (req:Request, res:Response) => {
         const { userId } = req.auth();
         const projectId = req.params.projectId as string;
 
-        const project = await prisma.project.findUnique({
+        const project = await prisma.project.findFirst({
             where: {id: projectId, userId}
         })
 
